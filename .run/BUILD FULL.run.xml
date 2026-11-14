@@ -1,0 +1,7 @@
+﻿<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="BUILD FULL" type="CompoundRunConfigurationType">
+    <toRun name="VoxelChaos" type="DotNetProject" />
+    <toRun name="InstallAssets" type="ShConfigurationType" />
+    <method v="2" />
+  </configuration>
+</component>
