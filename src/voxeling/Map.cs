@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 
-namespace raymarching
+namespace VoxelChaos.Voxeling
 {
     class Map
     {
-        public Chunk[,,] chunks;
+        public Chunk[] chunks;
     }
 }

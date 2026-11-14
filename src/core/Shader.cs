@@ -147,6 +147,25 @@ public class Shader
         _gl.Uniform3(location, x, y, z);
     }
 
+    public virtual void SetUniformVec2f(string name, Vector2 vec)
+    {
+        var location = _gl.GetUniformLocation(program, name);
+        _gl.Uniform2(location, vec);
+    }
+
+    public virtual void SetUniformVec2f(string name, float x, float y)
+    {
+        var location = _gl.GetUniformLocation(program, name);
+        _gl.Uniform2(location, x, y);
+    }
+
+
+    public virtual void SetUniformVec2i(string name, int x, int y)
+    {
+        var location = _gl.GetUniformLocation(program, name);
+        _gl.Uniform2(location, x, y);
+    }
+
     public virtual void SetUniformVec4f(string name, Vector4 vec)
     {
         var location = _gl.GetUniformLocation(program, name);

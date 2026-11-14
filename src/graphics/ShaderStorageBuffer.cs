@@ -11,6 +11,11 @@ public class ByteShaderStorageBuffer
         _gl = gl;
     }
 
+    public uint GetID()
+    {
+        return _ssboId;
+    }
+
     public void Initialize(byte[] initialData)
     {
         _ssboId = _gl.GenBuffer();
@@ -34,7 +39,7 @@ public class ByteShaderStorageBuffer
     public void UpdateData(byte[] updatedData)
     {
         _gl.BindBuffer(BufferTargetARB.ShaderStorageBuffer, _ssboId);
-        
+
         unsafe
         {
             fixed (byte* ptr = updatedData)
@@ -43,7 +48,7 @@ public class ByteShaderStorageBuffer
                 _gl.BufferSubData(BufferTargetARB.ShaderStorageBuffer, 0, size, ptr);
             }
         }
-        
+
         _gl.BindBuffer(BufferTargetARB.ShaderStorageBuffer, 0);
     }
 
@@ -58,9 +63,9 @@ public class ByteShaderStorageBuffer
         unsafe
         {
             void* gpuPtr = _gl.MapBufferRange(
-                BufferTargetARB.ShaderStorageBuffer, 
-                0, 
-                size, 
+                BufferTargetARB.ShaderStorageBuffer,
+                0,
+                size,
                 (uint)MapBufferAccessMask.ReadBit
             );
 
@@ -79,8 +84,8 @@ public class ByteShaderStorageBuffer
         _gl.BindBuffer(BufferTargetARB.ShaderStorageBuffer, 0);
     }
 
-    public void Bind()
+    public void Bind(uint bindingPoint = 0)
     {
-        _gl.BindBufferBase(BufferTargetARB.ShaderStorageBuffer, 0, _ssboId);
+        _gl.BindBufferBase(BufferTargetARB.ShaderStorageBuffer, bindingPoint, _ssboId);
     }
 }

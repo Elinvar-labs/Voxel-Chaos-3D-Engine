@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace raymarching
+namespace VoxelChaos.Voxeling
 {
     public static class Constants
     {

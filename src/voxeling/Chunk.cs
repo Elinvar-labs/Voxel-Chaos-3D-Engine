@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace raymarching
+namespace VoxelChaos.Voxeling
 {
     public class Chunk
     {
-        public Block[] data = new Block[Constants.CHUNK_SIZE_CUBED];
+        public byte[] data = new byte[Constants.CHUNK_SIZE_CUBED];
     }
 }
