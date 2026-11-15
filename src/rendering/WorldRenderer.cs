@@ -1,4 +1,5 @@
-﻿using Silk.NET.OpenGL;
+﻿using System.Numerics;
+using Silk.NET.OpenGL;
 using VoxelChaos.Core;
 using VoxelChaos.Graphics;
 using raymarching;
@@ -23,6 +24,42 @@ public sealed class WorldRenderer
     private bool _volumeDirty = true;
     private const int WaterAtlasTile = 133;   // должен совпадать с ConfigurePalette
 
+    private float _totalTime = 0f;
+    private float _timeOfDay = 0.25f; // 0.25 = полдень
+
+    private Vector3 _sunDir     = Vector3.Normalize(new Vector3(0.55f, 1.0f, 0.75f));
+    private Vector3 _skyTop     = new(0.26f, 0.50f, 0.92f);
+    private Vector3 _skyHorizon = new(0.74f, 0.86f, 0.98f);
+    private Vector3 _sunColor   = new(1.00f, 0.95f, 0.82f);
+    private Vector3 _ambientCol = new(0.30f, 0.35f, 0.40f);
+    public void UpdateDayNight(float deltaTime)
+    {
+        _totalTime += deltaTime;
+        // Полный цикл за 120 секунд (2 минуты)
+        _timeOfDay = (_timeOfDay + deltaTime * (1.0f / 120.0f)) % 1.0f; 
+
+        // Угол солнца: полдень сверху, полночь снизу
+        float sunAngle = (_timeOfDay - 0.25f) * MathF.PI * 2.0f;
+        _sunDir = Vector3.Normalize(new Vector3(MathF.Cos(sunAngle), MathF.Sin(sunAngle), 0.3f));
+
+        // Вычисляем факторы дня, заката и ночи
+        float sunHeight = _sunDir.Y;
+        float dayBlend    = Math.Clamp(sunHeight * 5.0f, 0.0f, 1.0f);
+        float nightBlend  = Math.Clamp(-sunHeight * 5.0f, 0.0f, 1.0f);
+        float sunsetBlend = Math.Clamp(1.0f - dayBlend - nightBlend, 0.0f, 1.0f);
+
+        // Цвета для разных времен суток
+        Vector3 dTop = new(0.26f, 0.50f, 0.92f), dHor = new(0.74f, 0.86f, 0.98f), dSun = new(1.00f, 0.95f, 0.82f), dAmb = new(0.30f, 0.35f, 0.40f);
+        Vector3 sTop = new(0.20f, 0.25f, 0.50f), sHor = new(0.90f, 0.45f, 0.20f), sSun = new(1.00f, 0.50f, 0.20f), sAmb = new(0.25f, 0.20f, 0.20f);
+        Vector3 nTop = new(0.02f, 0.02f, 0.05f), nHor = new(0.05f, 0.05f, 0.15f), nSun = new(0.20f, 0.25f, 0.40f), nAmb = new(0.08f, 0.08f, 0.15f);
+
+        // Интерполяция
+        _skyTop     = dTop * dayBlend + sTop * sunsetBlend + nTop * nightBlend;
+        _skyHorizon = dHor * dayBlend + sHor * sunsetBlend + nHor * nightBlend;
+        _sunColor   = dSun * dayBlend + sSun * sunsetBlend + nSun * nightBlend;
+        _ambientCol = dAmb * dayBlend + sAmb * sunsetBlend + nAmb * nightBlend;
+    }
+    
     public WorldRenderer(GL gl, string computeShaderPath,
         uint realWidth, uint realHeight, uint renderWidth, uint renderHeight)
     {
@@ -73,7 +110,13 @@ public sealed class WorldRenderer
         _ddaShader.SetUniformInt("volSizeX", sizeX);
         _ddaShader.SetUniformInt("volSizeY", sizeY);
         _ddaShader.SetUniformInt("volSizeZ", sizeZ);
-        _ddaShader.SetUniformFloat("uTime", (float)DateTime.Now.TimeOfDay.TotalSeconds);
+        // _ddaShader.SetUniformFloat("uTime", (float)DateTime.Now.TimeOfDay.TotalSeconds);
+        _ddaShader.SetUniformFloat("uTime", _totalTime);
+        _ddaShader.SetUniformVec3f("uSunDir", _sunDir);
+        _ddaShader.SetUniformVec3f("uSkyTop", _skyTop);
+        _ddaShader.SetUniformVec3f("uSkyHorizon", _skyHorizon);
+        _ddaShader.SetUniformVec3f("uSunColor", _sunColor);
+        _ddaShader.SetUniformVec3f("uAmbientColor", _ambientCol);
         _atlas.Bind(_ddaShader, 1);
         _palette.Bind();
 

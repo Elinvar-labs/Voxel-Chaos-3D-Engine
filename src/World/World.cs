@@ -30,7 +30,7 @@ public sealed class World
         _structures = new StructurePlacer(WorldSeed);
 
         ConfigurePalette(_renderer.Palette);
-        _renderer.ApplyWaterAlpha(160);
+        _renderer.ApplyWaterAlpha(50);
         
         UpdateStreaming();
     }
@@ -99,7 +99,7 @@ public sealed class World
     }
 
     // ============================================================
-    public void Update()
+    public void Update(float deltaTime)
     {
         camera.Update();
 
@@ -109,6 +109,7 @@ public sealed class World
             camera.SetPosition(new Vector3(p.X, clampedY, p.Z));
 
         UpdateStreaming();
+        _renderer.UpdateDayNight(deltaTime);
     }
 
     public void Render()

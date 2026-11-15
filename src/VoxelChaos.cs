@@ -85,7 +85,7 @@ public sealed class Program : IDisposable
     {
         if (Input.Jpressed(Key.Escape)) { _window!.Close(); return; }
 
-        _world!.Update();       // двигает _player через Camera.ParseInput + streaming
+        _world!.Update((float)deltaTime);       // двигает _player через Camera.ParseInput + streaming
         _inventory!.Update();   // hotbar 1..9 / колесо
         _interaction!.Update(); // hold-to-break + place
         Input.PullEvents();
