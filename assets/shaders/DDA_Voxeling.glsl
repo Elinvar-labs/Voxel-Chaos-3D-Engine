@@ -11,26 +11,53 @@ layout(std430, binding = 1) buffer BlockFacesBuffer {
     uint blockFaces[256];
 };
 
-const int MAP_SIZE_X = 32;
-const int MAP_SIZE_Y = 32;
-const int MAP_SIZE_Z = 32;
-
+// ---------- Uniforms ----------
 uniform int screenWidth;
 uniform int screenHeight;
 
-uniform vec3 cameraPos;
-uniform vec3 cameraFront;
-uniform vec3 cameraUp;
-uniform vec3 cameraRight;
+uniform vec3  cameraPos;
+uniform vec3  cameraFront;
+uniform vec3  cameraUp;
+uniform vec3  cameraRight;
 uniform float fov;
 
 uniform usampler3D volumeTexture;
-uniform sampler2D atlasTexture;
+uniform sampler2D   atlasTexture;
 
-uniform int maxSteps = 512;
+// Volume geometry. World → volume space: p_vol = p_world - volOrigin
+uniform float volOriginX, volOriginY, volOriginZ;
+uniform int   volSizeX,   volSizeY,   volSizeZ;
+
+uniform int maxSteps = 768;
+
+// ---------- Tweaking constants ----------
+const vec3  SUN_DIR     = normalize(vec3(0.55, 1.0, 0.75)); // toward the sun
+const float SUN_AMBIENT = 0.38;
+const float SUN_DIFFUSE = 0.62;
+
+const vec3  SKY_TOP     = vec3(0.26, 0.50, 0.92);
+const vec3  SKY_HORIZON = vec3(0.74, 0.86, 0.98);
+
+const vec3  FOG_COLOR   = vec3(0.72, 0.83, 0.96);
+const float FOG_START   = 90.0;
+const float FOG_END     = 280.0;
 
 const int ATLAS_TILES = 16;
 const int TILE_SIZE   = 16;
+
+// ---------- Helpers ----------
+uint packRGBA(vec4 c) {
+    uint r = uint(clamp(c.r, 0.0, 1.0) * 255.0 + 0.5);
+    uint g = uint(clamp(c.g, 0.0, 1.0) * 255.0 + 0.5);
+    uint b = uint(clamp(c.b, 0.0, 1.0) * 255.0 + 0.5);
+    uint a = uint(clamp(c.a, 0.0, 1.0) * 255.0 + 0.5);
+    return (a << 24) | (b << 16) | (g << 8) | r;
+}
+
+vec3 skyColor(vec3 dir) {
+    float t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
+    return mix(SKY_HORIZON, SKY_TOP, pow(t, 0.85));
+}
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
@@ -39,23 +66,28 @@ void main() {
     int pixelX = int(index % uint(screenWidth));
     int pixelY = int(index / uint(screenWidth));
 
+    // ---------- Ray generation (world space) ----------
     vec2 ndc = vec2(
         (float(pixelX) + 0.5) / float(screenWidth)  * 2.0 - 1.0,
-        (float(pixelY) + 0.5) / float(screenHeight) * 2.0 - 1.0
+        1.0 - (float(pixelY) + 0.5) / float(screenHeight) * 2.0   // ← Y инвертирован
     );
-
     float aspect     = float(screenWidth) / float(screenHeight);
     float tanHalfFov = tan(radians(fov) * 0.5);
 
-    vec3 rayDir = normalize(
+    vec3 rayDirWorld = normalize(
         cameraFront +
         cameraRight * (ndc.x * aspect * tanHalfFov) +
         cameraUp    * (ndc.y        * tanHalfFov)
     );
 
-    vec3  rayPos  = cameraPos;
-    ivec3 stepDir = ivec3(sign(rayDir));
+    // ---------- To volume space ----------
+    vec3 volOrigin = vec3(volOriginX, volOriginY, volOriginZ);
+    vec3 rayPos    = cameraPos - volOrigin;
+    vec3 rayDir    = rayDirWorld;
+
+    // ---------- DDA setup ----------
     ivec3 mapPos  = ivec3(floor(rayPos));
+    ivec3 stepDir = ivec3(sign(rayDir));
 
     vec3 deltaDist = vec3(
         (rayDir.x == 0.0) ? 1e30 : abs(1.0 / rayDir.x),
@@ -64,41 +96,54 @@ void main() {
     );
 
     vec3 sideDist;
-    sideDist.x = (rayDir.x > 0.0) ? (float(mapPos.x) + 1.0 - rayPos.x) * deltaDist.x : (rayPos.x - float(mapPos.x)) * deltaDist.x;
-    sideDist.y = (rayDir.y > 0.0) ? (float(mapPos.y) + 1.0 - rayPos.y) * deltaDist.y : (rayPos.y - float(mapPos.y)) * deltaDist.y;
-    sideDist.z = (rayDir.z > 0.0) ? (float(mapPos.z) + 1.0 - rayPos.z) * deltaDist.z : (rayPos.z - float(mapPos.z)) * deltaDist.z;
+    sideDist.x = (rayDir.x > 0.0) ? (float(mapPos.x) + 1.0 - rayPos.x) * deltaDist.x
+                                  : (rayPos.x - float(mapPos.x)) * deltaDist.x;
+    sideDist.y = (rayDir.y > 0.0) ? (float(mapPos.y) + 1.0 - rayPos.y) * deltaDist.y
+                                  : (rayPos.y - float(mapPos.y)) * deltaDist.y;
+    sideDist.z = (rayDir.z > 0.0) ? (float(mapPos.z) + 1.0 - rayPos.z) * deltaDist.z
+                                  : (rayPos.z - float(mapPos.z)) * deltaDist.z;
 
-    uint voxelID = 0u;
-    int  hitSide = -1;
-    bool hit     = false;
+    uint  voxelID = 0u;
+    int   hitSide = -1;
+    bool  hit     = false;
+    float travel  = 0.0;
 
+    // ---------- DDA loop ----------
     for (int i = 0; i < maxSteps; i++) {
-        if (mapPos.x >= 0 && mapPos.x < MAP_SIZE_X &&
-            mapPos.y >= 0 && mapPos.y < MAP_SIZE_Y &&
-            mapPos.z >= 0 && mapPos.z < MAP_SIZE_Z)
-        {
-            uint id = texelFetch(volumeTexture, mapPos, 0).r;
-            if (id != 0u) { voxelID = id; hit = true; break; }
-        } else if (mapPos.y < 0 || mapPos.y >= MAP_SIZE_Y) {
-            break;
-        }
+        // Volume bounds check (X, Y and Z — not just Y)
+        if (mapPos.x < 0 || mapPos.x >= volSizeX ||
+            mapPos.y < 0 || mapPos.y >= volSizeY ||
+            mapPos.z < 0 || mapPos.z >= volSizeZ) break;
+
+        uint id = texelFetch(volumeTexture, mapPos, 0).r;
+        if (id != 0u) { voxelID = id; hit = true; break; }
 
         if (sideDist.x < sideDist.y) {
-            if (sideDist.x < sideDist.z) { sideDist.x += deltaDist.x; mapPos.x += stepDir.x; hitSide = 0; }
-            else                         { sideDist.z += deltaDist.z; mapPos.z += stepDir.z; hitSide = 2; }
+            if (sideDist.x < sideDist.z) {
+                travel = sideDist.x; sideDist.x += deltaDist.x;
+                mapPos.x += stepDir.x; hitSide = 0;
+            } else {
+                travel = sideDist.z; sideDist.z += deltaDist.z;
+                mapPos.z += stepDir.z; hitSide = 2;
+            }
         } else {
-            if (sideDist.y < sideDist.z) { sideDist.y += deltaDist.y; mapPos.y += stepDir.y; hitSide = 1; }
-            else                         { sideDist.z += deltaDist.z; mapPos.z += stepDir.z; hitSide = 2; }
+            if (sideDist.y < sideDist.z) {
+                travel = sideDist.y; sideDist.y += deltaDist.y;
+                mapPos.y += stepDir.y; hitSide = 1;
+            } else {
+                travel = sideDist.z; sideDist.z += deltaDist.z;
+                mapPos.z += stepDir.z; hitSide = 2;
+            }
         }
     }
 
-    uint pixelColor = 0xFF1A1A1Au;
+    uint pixelColor;
 
     if (hit) {
-        // entry distance along the last-crossed axis is sideDist - deltaDist
+        // ---------- Face-local UV ----------
         vec3 localUV;
         if (hitSide < 0) {
-            // camera spawned inside a solid voxel — degrade gracefully
+            // camera inside solid voxel — degrade gracefully
             localUV = fract(rayPos);
             hitSide = 0;
         } else {
@@ -107,7 +152,7 @@ void main() {
             localUV = fract(rayPos + rayDir * (s - d));
         }
 
-        uint faceIds    = blockFaces[voxelID];
+        uint faceIds    = blockFaces[min(voxelID, 255u)];
         uint sideTile   =  faceIds        & 0xFFu;
         uint topTile    = (faceIds >>  8) & 0xFFu;
         uint bottomTile = (faceIds >> 16) & 0xFFu;
@@ -129,19 +174,33 @@ void main() {
             tile = sideTile;
         }
 
-        // integer texel coords — zero filtering cost, no bleeding between atlas tiles
+        // Integer texel fetch — zero filtering, no atlas bleeding
         ivec2 tileOrigin = ivec2(int(tile) % ATLAS_TILES, int(tile) / ATLAS_TILES) * TILE_SIZE;
         ivec2 texelPos   = tileOrigin + clamp(ivec2(faceUV * float(TILE_SIZE)), ivec2(0), ivec2(TILE_SIZE - 1));
         vec4  texColor   = texelFetch(atlasTexture, texelPos, 0);
 
-        float shade = (hitSide == 1) ? 1.0 : ((hitSide == 0) ? 0.75 : 0.55);
+        // ---------- Shading ----------
+        float faceShade = (hitSide == 1) ? 1.00 : ((hitSide == 0) ? 0.78 : 0.60);
 
-        uint r = uint(texColor.r * 255.0 * shade);
-        uint g = uint(texColor.g * 255.0 * shade);
-        uint b = uint(texColor.b * 255.0 * shade);
-        uint a = uint(texColor.a * 255.0);
+        // Outward-facing normal of the surface the ray just hit
+        vec3 faceNormal = vec3(
+            (hitSide == 0) ? -float(stepDir.x) : 0.0,
+            (hitSide == 1) ? -float(stepDir.y) : 0.0,
+            (hitSide == 2) ? -float(stepDir.z) : 0.0
+        );
+        float ndl = max(dot(faceNormal, SUN_DIR), 0.0);
+        float sun = SUN_AMBIENT + SUN_DIFFUSE * ndl;
 
-        pixelColor = (a << 24) | (b << 16) | (g << 8) | r;
+        vec3 rgb = texColor.rgb * faceShade * sun;
+
+        // ---------- Distance fog ----------
+        float fogT = clamp((travel - FOG_START) / (FOG_END - FOG_START), 0.0, 1.0);
+        if (fogT > 0.0) rgb = mix(rgb, FOG_COLOR, fogT);
+
+        pixelColor = packRGBA(vec4(rgb, texColor.a));
+    } else {
+        // ---------- Sky ----------
+        pixelColor = packRGBA(vec4(skyColor(rayDirWorld), 1.0));
     }
 
     data[index] = pixelColor;

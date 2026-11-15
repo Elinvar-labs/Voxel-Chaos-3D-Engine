@@ -74,13 +74,13 @@ public class Camera
         if (Input.Pressed(Key.S)) movement -= forwardPlane * cameraSpeed;
         if (Input.Pressed(Key.A)) movement += right * cameraSpeed;
         if (Input.Pressed(Key.D)) movement -= right * cameraSpeed;
-        if (Input.Pressed(Key.ShiftLeft)) movement.Y += cameraSpeed;
-        if (Input.Pressed(Key.Space)) movement.Y -= cameraSpeed;
+        if (Input.Pressed(Key.ShiftLeft)) movement.Y -= cameraSpeed;
+        if (Input.Pressed(Key.Space)) movement.Y += cameraSpeed;
 
         if (movement.LengthSquared() > 0) position += movement;
 
         yaw -= Input.DeltaX * sensitivity;
-        pitch -= Input.DeltaY * sensitivity;
+        pitch += Input.DeltaY * sensitivity;
 
         pitch = Math.Clamp(pitch, -89F, 89F);
         yaw = (yaw % 360f + 360f) % 360f;

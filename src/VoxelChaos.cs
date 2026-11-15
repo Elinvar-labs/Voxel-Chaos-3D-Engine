@@ -42,7 +42,7 @@ public class VoxelChaos
         // _gl.ClearColor(Color.CornflowerBlue);
         // _gl.Enable(EnableCap.Blend);
         // _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-        world = new World(_gl, -15.0f, 25.0f, -15.0f, WIN_WIDTH, WIN_HEIGHT, 640, 360);
+        world = new World(_gl, 64f, 64f, 64f, WIN_WIDTH, WIN_HEIGHT, 640, 360);
     }
 
 
