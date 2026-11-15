@@ -20,6 +20,10 @@ public class VoxelChaos
     private static double _currentFps;
     private static readonly uint WIN_WIDTH = 1280;
     private static readonly uint WIN_HEIGHT = 720;
+    // private static readonly uint RENDER_WIDTH = 640;
+    // private static readonly uint RENDER_HEIGHT = 360;
+    private static readonly uint RENDER_WIDTH = 800;
+    private static readonly uint RENDER_HEIGHT = 480;
 
     public static void Main(string[] args)
     {
@@ -42,7 +46,7 @@ public class VoxelChaos
         // _gl.ClearColor(Color.CornflowerBlue);
         // _gl.Enable(EnableCap.Blend);
         // _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
-        world = new World(_gl, 64f, 64f, 64f, WIN_WIDTH, WIN_HEIGHT, 640, 360);
+        world = new World(_gl, 64f, 64f, 64f, WIN_WIDTH, WIN_HEIGHT, RENDER_WIDTH, RENDER_HEIGHT);
     }
 
 
