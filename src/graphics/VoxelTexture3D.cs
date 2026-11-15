@@ -59,6 +59,13 @@ public class VoxelTexture3D
         }
     }
     
+    public unsafe void UpdateBlock(int x, int y, int z, byte value)
+    {
+        _gl.BindTexture(TextureTarget.Texture3D, _textureId);
+        _gl.TexSubImage3D(TextureTarget.Texture3D, 0, x, y, z, 1, 1, 1,
+            PixelFormat.RedInteger, PixelType.UnsignedByte, &value);
+    }
+    
     public unsafe void UploadToShader(byte[] voxelDataArray, uint x_size, uint y_size, uint z_size)
         => Update(voxelDataArray, x_size, y_size, z_size);
 

@@ -18,7 +18,7 @@ public sealed class World
     private readonly VolumeBuilder _volume = new();
     private readonly WorldRenderer _renderer;
 
-    public Camera camera { get; }
+    public Camera camera { get; set; }
 
     public World(GL gl, float camX, float camY, float camZ,
         uint realWidth, uint realHeight, uint renderWidth, uint renderHeight)
@@ -34,6 +34,52 @@ public sealed class World
         UpdateStreaming();
     }
 
+    public void SetCamera(Camera cam) => camera = cam;   // поле camera → property без readonly
+
+    public byte GetBlock(int wx, int wy, int wz)
+    {
+        if (wy < 0 || wy >= WorldConfig.WorldHeight) return Blocks.Air;
+        int cx = wx >> Chunk.SHIFT, cy = wy >> Chunk.SHIFT, cz = wz >> Chunk.SHIFT;
+        if (!_storage.TryGet(new ChunkPos(cx, cy, cz), out var ch)) return Blocks.Air;
+        return ch.Get(wx & Chunk.MASK, wy & Chunk.MASK, wz & Chunk.MASK);
+    }
+
+    public bool IsSolid(int wx, int wy, int wz)
+    {
+        var b = GetBlock(wx, wy, wz);
+        return b != Blocks.Air && b != Blocks.Water && b != Blocks.Lava;
+    }
+
+    public void SetBlock(int wx, int wy, int wz, byte block)
+    {
+        if (wy < 0 || wy >= WorldConfig.WorldHeight) return;
+        int cx = wx >> Chunk.SHIFT, cy = wy >> Chunk.SHIFT, cz = wz >> Chunk.SHIFT;
+        if (!_storage.TryGet(new ChunkPos(cx, cy, cz), out var ch)) return;
+
+        ch.Set(wx & Chunk.MASK, wy & Chunk.MASK, wz & Chunk.MASK, block);
+
+        int vx = wx - _volume.OriginChunkX * Chunk.SIZE;
+        int vy = wy - _volume.OriginChunkY * Chunk.SIZE;
+        int vz = wz - _volume.OriginChunkZ * Chunk.SIZE;
+
+        if ((uint)vx < (uint)VolumeBuilder.SizeX &&
+            (uint)vy < (uint)VolumeBuilder.SizeY &&
+            (uint)vz < (uint)VolumeBuilder.SizeZ)
+        {
+            int idx = vx + vy * VolumeBuilder.SizeX + vz * VolumeBuilder.SizeX * VolumeBuilder.SizeY;
+            _volume.Data[idx] = block;
+            _renderer.UpdateVolumeBlock(vx, vy, vz, block);
+        }
+    }
+
+    public void Render(Action<byte[], int, int>? overlay = null)
+    {
+        _renderer.Render(_volume.Data, VolumeBuilder.SizeX, VolumeBuilder.SizeY, VolumeBuilder.SizeZ,
+            _volume.OriginChunkX * Chunk.SIZE,
+            _volume.OriginChunkY * Chunk.SIZE,
+            _volume.OriginChunkZ * Chunk.SIZE,
+            camera, overlay);
+    }
     private static void ConfigurePalette(BlockPalette palette)
     {
         palette.SetBlock(Blocks.Dirt,        55, 55, 55);

@@ -51,7 +51,7 @@ public sealed class WorldRenderer
     public void Render(
         byte[] volume, int sizeX, int sizeY, int sizeZ,
         int originBlockX, int originBlockY, int originBlockZ,
-        Camera camera)
+        Camera camera, Action<byte[], int, int>? overlay = null)
     {
         Array.Fill(_screenImage, (byte)255);
         _ddaShader.Bind();
@@ -79,11 +79,16 @@ public sealed class WorldRenderer
         camera.Render(_ddaShader);
 
         DispatchAndDownload();
-
+        
+        overlay?.Invoke(_screenImage, (int)_renderW, (int)_renderH);
+        
         _screen.UploadLowResImage(_screenImage, _renderW, _renderH);
         _screen.Render(_realW, _realH);
     }
 
+    public void UpdateVolumeBlock(int x, int y, int z, byte b)
+        => _voxelTexture.UpdateBlock(x, y, z, b);
+    
     private void DispatchAndDownload()
     {
         int totalPixels = _screenImage.Length / 4;

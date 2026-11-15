@@ -8,21 +8,19 @@ namespace VoxelChaos.Core;
 
 public class Camera
 {
-    private Vector3 front = new(0F, 0F, -1F);
-    private readonly uint heightPx;
+    protected Vector3 front = new(0F, 0F, -1F);
     private readonly Timer movementTimer;
-    private float pitch;
-    private Vector3 position;
-    private Vector3 right;
-    private readonly float fov;
-
+    protected float pitch;
+    protected Vector3 position;
+    protected Vector3 right;
+    protected readonly float fov;
+    protected readonly Vector3 worldUp = new(0F, 1F, 0F);
+    protected Vector3 up;
+    protected float yaw = 0F;
+    private readonly uint widthPx;
+    private readonly uint heightPx;
     private readonly float sensitivity = 0.1F;
     private readonly float speed = 10F;
-    private Vector3 up;
-
-    private readonly uint widthPx;
-    private readonly Vector3 worldUp = new(0F, 1F, 0F);
-    private float yaw = 0F;
 
     public Camera(Vector3 startPos, float fov, uint winWidth, uint winHeight)
     {
@@ -42,7 +40,7 @@ public class Camera
         shader.SetUniformVec3f("cameraUp", up);
         shader.SetUniformVec3f("cameraRight", right);
         shader.SetUniformFloat("fov", fov);
-    } 
+    }
 
     public Vector3 GetPosition() => position;
     public Vector3 GetFront() => front;
@@ -54,7 +52,7 @@ public class Camera
         ParseInput();
     }
 
-    private void UpdateVectors()
+    protected void UpdateVectors()
     {
         right = Vector3.Normalize(Vector3.Cross(front, worldUp));
         up = Vector3.Normalize(Vector3.Cross(right, front));
@@ -67,7 +65,7 @@ public class Camera
         var cameraSpeed = (Input.Pressed(Key.ControlLeft) ? speed + 80F : speed) * delta;
 
         var movement = Vector3.Zero;
-        
+
         var forwardPlane = Vector3.Normalize(new Vector3(front.X, 0.0f, front.Z));
 
         if (Input.Pressed(Key.W)) movement += forwardPlane * cameraSpeed;

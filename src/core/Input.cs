@@ -20,6 +20,9 @@ public static class Input
     public static float DeltaX { get; private set; }
     public static float DeltaY { get; private set; }
 
+    public static float ScrollDelta { get; private set; }
+
+
     public static void Initialize(IWindow window)
     {
         _inputContext = window.CreateInput();
@@ -104,6 +107,7 @@ public static class Input
                     _y = yp;
                 }
             };
+            mouse.Scroll += (m, wheel) => { ScrollDelta += wheel.Y; };
         }
     }
 
@@ -140,5 +144,6 @@ public static class Input
         _current++;
         DeltaX = 0F;
         DeltaY = 0F;
+        ScrollDelta = 0F;
     }
 }
