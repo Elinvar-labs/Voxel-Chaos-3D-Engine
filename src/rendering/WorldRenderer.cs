@@ -21,6 +21,7 @@ public sealed class WorldRenderer
     private readonly uint _renderW, _renderH, _realW, _realH;
 
     private bool _volumeDirty = true;
+    private const int WaterAtlasTile = 133;   // должен совпадать с ConfigurePalette
 
     public WorldRenderer(GL gl, string computeShaderPath,
         uint realWidth, uint realHeight, uint renderWidth, uint renderHeight)
@@ -72,7 +73,7 @@ public sealed class WorldRenderer
         _ddaShader.SetUniformInt("volSizeX", sizeX);
         _ddaShader.SetUniformInt("volSizeY", sizeY);
         _ddaShader.SetUniformInt("volSizeZ", sizeZ);
-
+        _ddaShader.SetUniformFloat("uTime", (float)DateTime.Now.TimeOfDay.TotalSeconds);
         _atlas.Bind(_ddaShader, 1);
         _palette.Bind();
 
@@ -86,6 +87,10 @@ public sealed class WorldRenderer
         _screen.Render(_realW, _realH);
     }
 
+    /// <summary>Полупрозрачная вода: 0 = полностью прозрачна, 255 = полностью непрозрачна.</summary>
+    public void ApplyWaterAlpha(byte alpha) => _atlas.ApplyTileAlpha(WaterAtlasTile, alpha);
+
+    
     public void UpdateVolumeBlock(int x, int y, int z, byte b)
         => _voxelTexture.UpdateBlock(x, y, z, b);
     

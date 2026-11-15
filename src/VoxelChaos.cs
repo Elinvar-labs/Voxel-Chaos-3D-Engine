@@ -30,6 +30,7 @@ public sealed class Program : IDisposable
     private Inventory?        _inventory;
     private BlockInteraction? _interaction;
     private HotbarRenderer?   _hotbar;
+    private HudRenderer?      _hud;
 
     private readonly Stopwatch _fpsStopwatch = new();
     private int _frameCount;
@@ -61,18 +62,21 @@ public sealed class Program : IDisposable
         Input.Initialize(_window!);
         _gl = _window!.CreateOpenGL();
 
-        // 1) World с временной камерой
+        // Включаем блендинг: он нужен для полупрозрачной воды (атлас alpha < 255)
+        // и для UI-оверлеев с alpha < 255.
+        _gl.Enable(EnableCap.Blend);
+        _gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+
         _world = new World.World(_gl, SpawnFeet.X, SpawnFeet.Y + PlayerController.EyeHeight, SpawnFeet.Z,
                            WindowWidth, WindowHeight, RenderWidth, RenderHeight);
 
-        // 2) Игрок + замена камеры
         _player = new PlayerController(SpawnFeet, 60, RenderWidth, RenderHeight, _world);
         _world.SetCamera(_player);
 
-        // 3) Инвентарь / взаимодействие / UI
         _inventory   = new Inventory();
         _interaction = new BlockInteraction(_world, _player, _player, _inventory);
         _hotbar      = new HotbarRenderer(_inventory);
+        _hud         = new HudRenderer();
 
         _fpsStopwatch.Start();
     }
@@ -81,9 +85,9 @@ public sealed class Program : IDisposable
     {
         if (Input.Jpressed(Key.Escape)) { _window!.Close(); return; }
 
-        _world!.Update();      // двигает _player через Camera.ParseInput + streaming
-        _inventory!.Update();  // hotbar 1..9 / колесо
-        _interaction!.Update();
+        _world!.Update();       // двигает _player через Camera.ParseInput + streaming
+        _inventory!.Update();   // hotbar 1..9 / колесо
+        _interaction!.Update(); // hold-to-break + place
         Input.PullEvents();
         UpdateFpsTitle();
     }
@@ -91,7 +95,12 @@ public sealed class Program : IDisposable
     private void OnRender(double deltaTime)
     {
         _gl!.Clear(ClearBufferMask.ColorBufferBit);
-        _world!.Render((img, w, h) => _hotbar!.Draw(img, w, h));   // overlay
+        _world!.Render((img, w, h) =>
+        {
+            _hotbar!.Draw(img, w, h);
+            _hud!.DrawDebug(img, w, h, _player!.BodyPosition, _player.Mode, _currentFps);
+            _hud!.DrawCrosshair(img, w, h);
+        });
     }
 
     private void UpdateFpsTitle()
@@ -104,8 +113,5 @@ public sealed class Program : IDisposable
         _window!.Title = $"{WindowTitle} | FPS: {_currentFps:F0} | {_player!.Mode}";
     }
 
-    public void Dispose()
-    {
-        _window?.Dispose();
-    }
+    public void Dispose() => _window?.Dispose();
 }

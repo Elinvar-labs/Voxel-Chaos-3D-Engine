@@ -30,7 +30,8 @@ public sealed class World
         _structures = new StructurePlacer(WorldSeed);
 
         ConfigurePalette(_renderer.Palette);
-
+        _renderer.ApplyWaterAlpha(160);
+        
         UpdateStreaming();
     }
 

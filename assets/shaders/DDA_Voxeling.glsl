@@ -11,8 +11,9 @@ layout(std430, binding = 1) buffer BlockFacesBuffer {
 };
 
 // ---------- Uniforms ----------
-uniform int screenWidth;
-uniform int screenHeight;
+uniform int   screenWidth;
+uniform int   screenHeight;
+uniform float uTime; // Для анимации воды
 
 uniform vec3  cameraPos;
 uniform vec3  cameraFront;
@@ -28,29 +29,27 @@ uniform int   volSizeX,   volSizeY,   volSizeZ;
 
 uniform int maxSteps = 768;
 
-// ---------- Lighting constants ----------
+// ---------- Constants ----------
+// Должны совпадать с Blocks.cs
+const uint WATER_ID = 12u; 
+
 const vec3  SUN_DIR       = normalize(vec3(0.55, 1.0, 0.75));
 const vec3  SUN_COLOR     = vec3(1.00, 0.95, 0.82);
-const float SUN_AMBIENT   = 0.35;
-const float SUN_DIFFUSE   = 0.70;
 const float SUN_INTENSITY = 1.00;
 
 const vec3  SKY_TOP       = vec3(0.26, 0.50, 0.92);
 const vec3  SKY_HORIZON   = vec3(0.74, 0.86, 0.98);
+const vec3  GROUND_COLOR  = vec3(0.20, 0.18, 0.15); // Для отраженного света
 
 const vec3  FOG_COLOR     = vec3(0.72, 0.83, 0.96);
-const float FOG_START     = 90.0;
-const float FOG_END       = 280.0;
+const float FOG_DENSITY   = 0.008; // Для экспоненциального тумана
 
 const int ATLAS_TILES = 16;
 const int TILE_SIZE   = 16;
 
-// Shadow ray step budget. 96 corresponds to ~96 voxels of sun travel
-// (enough for local shadowing in typical scenes).
-const int   SHADOW_STEPS = 96;
+const int   SHADOW_STEPS = 64; // Уменьшено для оптимизации
 const float AO_MIN       = 0.30;
 
-// Precomputed shadow DDA constants (uniforms collapsed at compile time)
 const vec3 SHADOW_STEP_DIR   = sign(SUN_DIR);
 const vec3 SHADOW_DELTA_DIST = abs(1.0 / SUN_DIR);
 
@@ -66,34 +65,24 @@ uint packRGBA(vec4 c) {
 vec3 skyColor(vec3 dir) {
     float t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
     vec3 base = mix(SKY_HORIZON, SKY_TOP, pow(t, 0.85));
-    // Sun disc + soft halo
     float sunDot = max(dot(dir, SUN_DIR), 0.0);
-    float disc   = pow(sunDot, 1024.0) * 3.0;
-    float halo   = pow(sunDot, 12.0)  * 0.20;
-    return base + SUN_COLOR * (disc + halo);
+    return base + SUN_COLOR * (pow(sunDot, 1024.0) * 3.0 + pow(sunDot, 12.0) * 0.20);
 }
 
 bool isSolid(ivec3 p) {
-    if (p.x < 0 || p.x >= volSizeX ||
-        p.y < 0 || p.y >= volSizeY ||
-        p.z < 0 || p.z >= volSizeZ) return false;
+    if (p.x < 0 || p.x >= volSizeX || p.y < 0 || p.y >= volSizeY || p.z < 0 || p.z >= volSizeZ) return false;
     return texelFetch(volumeTexture, p, 0).r != 0u;
 }
 
-// DDA shadow ray toward SUN_DIR. Returns 1.0 = lit, 0.0 = shadowed.
-// Origin should already be offset from the surface.
 float shadowRay(vec3 origin) {
     vec3 p = origin;
     ivec3 mapPos  = ivec3(floor(p));
     ivec3 stepDir = ivec3(SHADOW_STEP_DIR);
 
     vec3 sideDist = vec3(
-        (SUN_DIR.x > 0.0) ? (float(mapPos.x) + 1.0 - p.x) * SHADOW_DELTA_DIST.x
-                          : (p.x - float(mapPos.x)) * SHADOW_DELTA_DIST.x,
-        (SUN_DIR.y > 0.0) ? (float(mapPos.y) + 1.0 - p.y) * SHADOW_DELTA_DIST.y
-                          : (p.y - float(mapPos.y)) * SHADOW_DELTA_DIST.y,
-        (SUN_DIR.z > 0.0) ? (float(mapPos.z) + 1.0 - p.z) * SHADOW_DELTA_DIST.z
-                          : (p.z - float(mapPos.z)) * SHADOW_DELTA_DIST.z
+        (SUN_DIR.x > 0.0) ? (float(mapPos.x) + 1.0 - p.x) * SHADOW_DELTA_DIST.x : (p.x - float(mapPos.x)) * SHADOW_DELTA_DIST.x,
+        (SUN_DIR.y > 0.0) ? (float(mapPos.y) + 1.0 - p.y) * SHADOW_DELTA_DIST.y : (p.y - float(mapPos.y)) * SHADOW_DELTA_DIST.y,
+        (SUN_DIR.z > 0.0) ? (float(mapPos.z) + 1.0 - p.z) * SHADOW_DELTA_DIST.z : (p.z - float(mapPos.z)) * SHADOW_DELTA_DIST.z
     );
 
     for (int i = 0; i < SHADOW_STEPS; i++) {
@@ -105,25 +94,17 @@ float shadowRay(vec3 origin) {
             else                          { sideDist.z += SHADOW_DELTA_DIST.z; mapPos.z += stepDir.z; }
         }
 
-        // Left the volume → sunlight reaches this point
-        if (mapPos.x < 0 || mapPos.x >= volSizeX ||
-            mapPos.y < 0 || mapPos.y >= volSizeY ||
-            mapPos.z < 0 || mapPos.z >= volSizeZ) return 1.0;
-
+        if (mapPos.x < 0 || mapPos.x >= volSizeX || mapPos.y < 0 || mapPos.y >= volSizeY || mapPos.z < 0 || mapPos.z >= volSizeZ) return 1.0;
         if (texelFetch(volumeTexture, mapPos, 0).r != 0u) return 0.0;
     }
     return 1.0;
 }
 
-// Classic Minecraft-style corner AO
 float cornerAO(bool s1, bool s2, bool d) {
     if (s1 && s2) return 0.0;
     return 1.0 - float(int(s1) + int(s2) + int(d)) / 3.0;
 }
 
-// Compute AO for the face at basePos (air-voxel adjacent to the face),
-// using tangents T1/T2 and unflipped face-local UV.
-// 8 unique neighbors → 4 corner AOs → bilinear blend.
 float computeAO(ivec3 basePos, ivec3 T1, ivec3 T2, vec2 uv) {
     bool s_n1   = isSolid(basePos - T1);
     bool s_p1   = isSolid(basePos + T1);
@@ -139,11 +120,15 @@ float computeAO(ivec3 basePos, ivec3 T1, ivec3 T2, vec2 uv) {
     float ao01 = cornerAO(s_n1, s_p2, s_n1p2);
     float ao11 = cornerAO(s_p1, s_p2, s_p1p2);
 
-    return mix(
-        mix(ao00, ao10, uv.x),
-        mix(ao01, ao11, uv.x),
-        uv.y
-    );
+    return mix(mix(ao00, ao10, uv.x), mix(ao01, ao11, uv.x), uv.y);
+}
+
+// Умное освещение: Hemisphere Ambient (Небо сверху, Земля снизу)
+vec3 getLighting(vec3 normal, float ao, float ndl, float shadow) {
+    float skyFactor = normal.y * 0.5 + 0.5;
+    vec3 ambientColor = mix(GROUND_COLOR, SKY_TOP, skyFactor) * 0.40;
+    vec3 directColor = SUN_COLOR * (0.8 * ndl * shadow);
+    return (ambientColor * ao) + directColor;
 }
 
 void main() {
@@ -153,27 +138,20 @@ void main() {
     int pixelX = int(index % uint(screenWidth));
     int pixelY = int(index / uint(screenWidth));
 
-    // ---------- Ray generation (world space) ----------
+    // Ray generation
     vec2 ndc = vec2(
         (float(pixelX) + 0.5) / float(screenWidth)  * 2.0 - 1.0,
         1.0 - (float(pixelY) + 0.5) / float(screenHeight) * 2.0
     );
-    float aspect     = float(screenWidth) / float(screenHeight);
+    float aspect = float(screenWidth) / float(screenHeight);
     float tanHalfFov = tan(radians(fov) * 0.5);
+    vec3 rayDirWorld = normalize(cameraFront + cameraRight * (ndc.x * aspect * tanHalfFov) + cameraUp * (ndc.y * tanHalfFov));
 
-    vec3 rayDirWorld = normalize(
-        cameraFront +
-        cameraRight * (ndc.x * aspect * tanHalfFov) +
-        cameraUp    * (ndc.y        * tanHalfFov)
-    );
-
-    // ---------- To volume space ----------
     vec3 volOrigin = vec3(volOriginX, volOriginY, volOriginZ);
     vec3 rayPos    = cameraPos - volOrigin;
     vec3 rayDir    = rayDirWorld;
 
-    // ---------- Ray-AABB с объёмом ----------
-    // Позволяет камере быть вне объёма и пропускает пустое пространство.
+    // Ray-AABB
     vec3 volSize = vec3(float(volSizeX), float(volSizeY), float(volSizeZ));
     vec3 safeDir = rayDir;
     if (safeDir.x == 0.0) safeDir.x = 1e-30;
@@ -192,11 +170,10 @@ void main() {
         return;
     }
 
-    // Продвигаем луч до точки входа в объём
     rayPos += rayDir * tEnter;
     float travelOffset = tEnter;
 
-    // ---------- DDA setup ----------
+    // DDA setup
     ivec3 mapPos  = ivec3(floor(rayPos));
     ivec3 stepDir = ivec3(sign(rayDir));
 
@@ -207,30 +184,117 @@ void main() {
     );
 
     vec3 sideDist;
-    sideDist.x = (rayDir.x > 0.0) ? (float(mapPos.x) + 1.0 - rayPos.x) * deltaDist.x
-                                  : (rayPos.x - float(mapPos.x)) * deltaDist.x;
-    sideDist.y = (rayDir.y > 0.0) ? (float(mapPos.y) + 1.0 - rayPos.y) * deltaDist.y
-                                  : (rayPos.y - float(mapPos.y)) * deltaDist.y;
-    sideDist.z = (rayDir.z > 0.0) ? (float(mapPos.z) + 1.0 - rayPos.z) * deltaDist.z
-                                  : (rayPos.z - float(mapPos.z)) * deltaDist.z;
+    sideDist.x = (rayDir.x > 0.0) ? (float(mapPos.x) + 1.0 - rayPos.x) * deltaDist.x : (rayPos.x - float(mapPos.x)) * deltaDist.x;
+    sideDist.y = (rayDir.y > 0.0) ? (float(mapPos.y) + 1.0 - rayPos.y) * deltaDist.y : (rayPos.y - float(mapPos.y)) * deltaDist.y;
+    sideDist.z = (rayDir.z > 0.0) ? (float(mapPos.z) + 1.0 - rayPos.z) * deltaDist.z : (rayPos.z - float(mapPos.z)) * deltaDist.z;
 
-    uint  voxelID = 0u;
-    int   hitSide = -1;
-    bool  hit     = false;
+    // Для прозрачности
+    vec4 accumulatedColor = vec4(0.0);
+    bool hitSolid = false;
+    int  hitSide  = -1;
     float travel  = 0.0;
 
-    // ---------- DDA loop ----------
-    // Верхняя граница числа пересечений границ = расстояние * sqrt(3)
     int ddaSteps = min(maxSteps, int((tExit - tEnter) * 1.732) + 3);
 
+    // ---------- DDA loop ----------
     for (int i = 0; i < ddaSteps; i++) {
-        if (mapPos.x < 0 || mapPos.x >= volSizeX ||
-            mapPos.y < 0 || mapPos.y >= volSizeY ||
-            mapPos.z < 0 || mapPos.z >= volSizeZ) break;
+        if (mapPos.x < 0 || mapPos.x >= volSizeX || mapPos.y < 0 || mapPos.y >= volSizeY || mapPos.z < 0 || mapPos.z >= volSizeZ) break;
 
-        uint id = texelFetch(volumeTexture, mapPos, 0).r;
-        if (id != 0u) { voxelID = id; hit = true; break; }
+        uint voxelID = texelFetch(volumeTexture, mapPos, 0).r;
+        bool isWater = (voxelID == WATER_ID);
 
+        if (voxelID != 0u) {
+            // Вычисляем UV и нормаль
+            vec3 localUV;
+            ivec3 ivecNormal;
+            
+            if (hitSide < 0) { 
+                // Камера внутри солид-вокселя — деградация
+                localUV = fract(rayPos); 
+                hitSide = 0; 
+                ivecNormal = ivec3(1, 0, 0); 
+            } else {
+                float d = (hitSide == 0) ? deltaDist.x : ((hitSide == 1) ? deltaDist.y : deltaDist.z);
+                float s = (hitSide == 0) ? sideDist.x  : ((hitSide == 1) ? sideDist.y  : sideDist.z);
+                // s уже инкрементирован в DDA шаге, поэтому s - d даёт дистанцию до ВХОДНОЙ грани
+                localUV = fract(rayPos + rayDir * (s - d));
+                ivecNormal = ivec3((hitSide == 0) ? -stepDir.x : 0, (hitSide == 1) ? -stepDir.y : 0, (hitSide == 2) ? -stepDir.z : 0);
+            }
+
+            // Настройка текстур
+            uint faceIds = blockFaces[min(voxelID, 255u)];
+            uint sideTile = faceIds & 0xFFu, topTile = (faceIds >> 8) & 0xFFu, bottomTile = (faceIds >> 16) & 0xFFu;
+            uint tile; vec2 faceUV; vec2 aoUV; ivec3 T1, T2;
+
+            if (hitSide == 1) {
+                faceUV = localUV.xz; aoUV = localUV.xz; T1 = ivec3(1,0,0); T2 = ivec3(0,0,1);
+                tile = (stepDir.y < 0) ? topTile : bottomTile;
+                if (stepDir.y > 0) faceUV.y = 1.0 - faceUV.y;
+            } else if (hitSide == 0) {
+                faceUV = localUV.zy; aoUV = localUV.zy; T1 = ivec3(0,0,1); T2 = ivec3(0,1,0);
+                tile = sideTile;
+                if (stepDir.x > 0) faceUV.x = 1.0 - faceUV.x;
+            } else {
+                faceUV = localUV.xy; aoUV = localUV.xy; T1 = ivec3(1,0,0); T2 = ivec3(0,1,0);
+                tile = sideTile;
+                if (stepDir.z < 0) faceUV.x = 1.0 - faceUV.x;
+            }
+
+            // Анимация воды
+            if (isWater) {
+                float wTime = uTime * 0.5;
+                faceUV += vec2(sin(wTime + localUV.y * 10.0) * 0.05, cos(wTime + localUV.x * 10.0) * 0.05);
+            }
+
+            // Выборка текстуры
+            ivec2 tileOrigin = ivec2(int(tile) % ATLAS_TILES, int(tile) / ATLAS_TILES) * TILE_SIZE;
+            ivec2 texelPos   = tileOrigin + clamp(ivec2(faceUV * float(TILE_SIZE)), ivec2(0), ivec2(TILE_SIZE - 1));
+            vec4 texColor    = texelFetch(atlasTexture, texelPos, 0);
+
+            // Рассчет освещения
+            float faceShade = (hitSide == 1) ? 1.00 : ((hitSide == 0) ? 0.78 : 0.60);
+            vec3 faceNormal = vec3(ivecNormal);
+            float ndl = max(dot(faceNormal, SUN_DIR), 0.0);
+            
+            float shadow = 1.0;
+            if (ndl > 0.0 && !isWater) { // Тени только для твердых блоков (экономия)
+                vec3 hitPos = rayPos + rayDir * (travel - travelOffset);
+                shadow = shadowRay(hitPos + faceNormal * 0.01);
+            }
+
+            float ao = 1.0;
+            if (!isWater) { // AO только для твердых
+                ivec3 aoBase = mapPos + ivecNormal;
+                ao = computeAO(aoBase, T1, T2, aoUV);
+            }
+
+            // Продвинутое освещение
+            vec3 litColor = texColor.rgb * faceShade * getLighting(faceNormal, ao, ndl, shadow);
+            
+            // Добавляем блики (Specular) для воды
+            if (isWater) {
+                vec3 viewDir = normalize(cameraPos - (rayPos + volOrigin + rayDir * travel));
+                vec3 halfDir = normalize(SUN_DIR + viewDir);
+                float spec = pow(max(dot(faceNormal, halfDir), 0.0), 64.0);
+                litColor += SUN_COLOR * spec * 1.5;
+            }
+
+            // Накопление прозрачности
+            float alpha = texColor.a;
+            if (isWater) {
+                accumulatedColor.rgb += (1.0 - accumulatedColor.a) * litColor * alpha;
+                accumulatedColor.a   += (1.0 - accumulatedColor.a) * alpha;
+                
+                if (accumulatedColor.a > 0.95 || i > 16) { hitSolid = true; break; }
+            } else {
+                accumulatedColor.rgb += (1.0 - accumulatedColor.a) * litColor;
+                accumulatedColor.a   = 1.0;
+                hitSolid = true;
+                break;
+            }
+        }
+
+        // Шаг DDA
         if (sideDist.x < sideDist.y) {
             if (sideDist.x < sideDist.z) {
                 travel = sideDist.x; sideDist.x += deltaDist.x;
@@ -251,100 +315,23 @@ void main() {
     }
 
     travel += travelOffset;
-
     uint pixelColor;
 
-    if (hit) {
-        // ---------- Face-local UV and normal ----------
-        vec3  localUV;
-        ivec3 ivecNormal;
-
-        if (hitSide < 0) {
-            // Камера внутри солид-вокселя — деградация
-            localUV = fract(rayPos);
-            hitSide = 0;
-            ivecNormal = ivec3(1, 0, 0);
-        } else {
-            float d = (hitSide == 0) ? deltaDist.x : ((hitSide == 1) ? deltaDist.y : deltaDist.z);
-            float s = (hitSide == 0) ? sideDist.x  : ((hitSide == 1) ? sideDist.y  : sideDist.z);
-            localUV = fract(rayPos + rayDir * (s - d));
-            ivecNormal = ivec3(
-                (hitSide == 0) ? -stepDir.x : 0,
-                (hitSide == 1) ? -stepDir.y : 0,
-                (hitSide == 2) ? -stepDir.z : 0
-            );
-        }
-
-        // ---------- Face tiles ----------
-        uint faceIds    = blockFaces[min(voxelID, 255u)];
-        uint sideTile   =  faceIds        & 0xFFu;
-        uint topTile    = (faceIds >>  8) & 0xFFu;
-        uint bottomTile = (faceIds >> 16) & 0xFFu;
-
-        uint tile;
-        vec2 faceUV;
-        vec2 aoUV;
-        ivec3 T1, T2;
-
-        if (hitSide == 1) {
-            faceUV = localUV.xz;
-            aoUV   = localUV.xz;
-            T1 = ivec3(1,0,0); T2 = ivec3(0,0,1);
-            if (stepDir.y < 0) tile = topTile;
-            else             { tile = bottomTile; faceUV.y = 1.0 - faceUV.y; }
-        } else if (hitSide == 0) {
-            faceUV = localUV.zy;
-            aoUV   = localUV.zy;
-            T1 = ivec3(0,0,1); T2 = ivec3(0,1,0);
-            if (stepDir.x > 0) faceUV.x = 1.0 - faceUV.x;
-            tile = sideTile;
-        } else {
-            faceUV = localUV.xy;
-            aoUV   = localUV.xy;
-            T1 = ivec3(1,0,0); T2 = ivec3(0,1,0);
-            if (stepDir.z < 0) faceUV.x = 1.0 - faceUV.x;
-            tile = sideTile;
-        }
-
-        // ---------- Texture fetch (no filtering, no bleeding) ----------
-        ivec2 tileOrigin = ivec2(int(tile) % ATLAS_TILES, int(tile) / ATLAS_TILES) * TILE_SIZE;
-        ivec2 texelPos   = tileOrigin + clamp(ivec2(faceUV * float(TILE_SIZE)), ivec2(0), ivec2(TILE_SIZE - 1));
-        vec4  texColor   = texelFetch(atlasTexture, texelPos, 0);
-
-        // ---------- Advanced lighting ----------
-        float faceShade = (hitSide == 1) ? 1.00 : ((hitSide == 0) ? 0.78 : 0.60);
-
-        vec3 faceNormal = vec3(ivecNormal);
-        float ndl = max(dot(faceNormal, SUN_DIR), 0.0);
-
-        // Теневая DDA (только если грань обращена к солнцу)
-        float shadow = 1.0;
-        if (ndl > 0.0) {
-            vec3 hitPos = rayPos + rayDir * (travel - travelOffset);
-            vec3 shadowOrigin = hitPos + faceNormal * 0.01;
-            shadow = shadowRay(shadowOrigin);
-        }
-
-        // Ambient Occlusion
-        ivec3 aoBase = mapPos + ivecNormal;
-        float ao = computeAO(aoBase, T1, T2, aoUV);
-        float aoFactor = mix(AO_MIN, 1.0, ao);
-
-        // Раздельные ambient / direct каналы
-        float direct  = SUN_DIFFUSE * ndl * shadow * SUN_INTENSITY;
-        float ambient = SUN_AMBIENT * aoFactor;
-        float light   = ambient + direct;
-
-        vec3 rgb = texColor.rgb * faceShade * SUN_COLOR * light;
-
-        // ---------- Fog ----------
-        float fogT = clamp((travel - FOG_START) / (FOG_END - FOG_START), 0.0, 1.0);
-        if (fogT > 0.0) rgb = mix(rgb, FOG_COLOR, fogT);
-
-        pixelColor = packRGBA(vec4(rgb, texColor.a));
+    if (hitSolid) {
+        vec3 rgb = accumulatedColor.rgb / max(accumulatedColor.a, 0.001); // Нормализация цвета
+        float fogT = 1.0 - exp(-pow(travel * FOG_DENSITY, 2.0)); // Экспоненциальный туман
+        rgb = mix(rgb, FOG_COLOR, fogT);
+        pixelColor = packRGBA(vec4(rgb, 1.0)); // Финальная альфа 1.0 (небо/фон уже смешаны)
     } else {
-        // ---------- Sky ----------
-        pixelColor = packRGBA(vec4(skyColor(rayDirWorld), 1.0));
+        // Если луч вышел из объема, но видел воду — смешиваем воду с небом
+        vec3 sky = skyColor(rayDirWorld);
+        vec3 rgb = accumulatedColor.rgb + (1.0 - accumulatedColor.a) * sky;
+        
+        float fogT = 1.0 - exp(-pow(travel * FOG_DENSITY, 2.0));
+        rgb = mix(rgb, FOG_COLOR, fogT);
+        
+        // Если была вода, возвращаем альфу 1.0, так как смешали с фоном в шейдере
+        pixelColor = packRGBA(vec4(rgb, 1.0));
     }
 
     data[index] = pixelColor;
