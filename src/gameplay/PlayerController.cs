@@ -75,8 +75,8 @@ public sealed class PlayerController : Camera
         var move = Vector3.Zero;
         if (Input.Pressed(Key.W)) move += fwd;
         if (Input.Pressed(Key.S)) move -= fwd;
-        if (Input.Pressed(Key.A)) move -= right;
-        if (Input.Pressed(Key.D)) move += right;
+        if (Input.Pressed(Key.A)) move += right;
+        if (Input.Pressed(Key.D)) move -= right;
         if (Input.Pressed(Key.Space))     move += worldUp;
         if (Input.Pressed(Key.ShiftLeft)) move -= worldUp;
 
