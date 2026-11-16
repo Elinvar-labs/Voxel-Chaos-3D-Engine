@@ -26,10 +26,12 @@ public sealed class TerrainGenerator
         float humid = FastNoise.Fbm2(wx * 0.0018f, wz * 0.0018f, Seed + 2000, 3);
         float rare = FastNoise.Fbm2(wx * 0.0007f, wz * 0.0007f, Seed + 3000, 2);
 
-        if (rare > 0.4f)
+        // Снижаем порог "редкости" с 0.4 до 0.15, чтобы биомы действительно появлялись
+        if (rare > 0.15f)
         {
-            if (temp < -0.2f) return Biome.Ice;
-            if (temp > 0.25f) return Biome.Volcano;
+            // Снижаем требования к температуре, чтобы они появлялись чаще
+            if (temp < -0.05f) return Biome.Ice; // Было -0.2f
+            if (temp > 0.10f) return Biome.Volcano; // Было 0.25f
         }
 
         if (temp > 0.2f) return Biome.Desert;
