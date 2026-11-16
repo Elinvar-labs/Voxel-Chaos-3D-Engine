@@ -32,7 +32,9 @@ public sealed class WorldRenderer
     private Vector3 _skyHorizon = new(0.74f, 0.86f, 0.98f);
     private Vector3 _sunColor = new(1.00f, 0.95f, 0.82f);
     private Vector3 _ambientCol = new(0.30f, 0.35f, 0.40f);
-
+    
+    public float TimeOfDay => _timeOfDay;
+    
     public void UpdateDayNight(float deltaTime)
     {
         _totalTime += deltaTime;
@@ -70,6 +72,22 @@ public sealed class WorldRenderer
         _ambientCol = dAmb * dayBlend + sAmb * sunsetBlend + nAmb * nightBlend;
     }
 
+    public void RenderClearScreen(byte r, byte g, byte b, Action<byte[], int, int>? overlay)
+    {
+        Array.Fill(_screenImage, (byte)255); // Очистка
+        // Заливаем фон
+        UiPainter.FillRect(_screenImage, (int)_renderW, (int)_renderH, 0, 0, (int)_renderW, (int)_renderH, r, g, b, 255);
+    
+        overlay?.Invoke(_screenImage, (int)_renderW, (int)_renderH);
+        _screen.UploadLowResImage(_screenImage, _renderW, _renderH);
+        _screen.Render(_realW, _realH);
+    }
+    
+    public void SetTimeOfDay(float time)
+    {
+        _timeOfDay = time;
+    }
+    
     public WorldRenderer(GL gl, string computeShaderPath,
         uint realWidth, uint realHeight, uint renderWidth, uint renderHeight)
     {

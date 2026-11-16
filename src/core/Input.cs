@@ -9,7 +9,7 @@ public static class Input
 
     private static readonly bool[] _keys = new bool[1032];
     private static readonly int[] _frames = new int[1032];
-
+    private static readonly bool[] _clicks = new bool[1032];
     private static float _x;
     private static float _y;
     private static bool _cursorStarted = true;
@@ -20,7 +20,10 @@ public static class Input
     public static float DeltaX { get; private set; }
     public static float DeltaY { get; private set; }
 
-    public static float ScrollDelta { get; private set; }
+    private static float _scrollAccumulator = 0f;
+    public static int ScrollDelta { get; private set; }
+    public static float MouseX { get; private set; }
+    public static float MouseY { get; private set; }
 
 
     public static void Initialize(IWindow window)
@@ -38,7 +41,6 @@ public static class Input
         };
 
 
-        
         Console.WriteLine("INFO::INIT_INPUT");
 
         if (_inputContext.Keyboards.Count > 0)
@@ -80,6 +82,7 @@ public static class Input
         {
             var mouse = _inputContext.Mice[0];
 
+
             mouse.MouseDown += (m, button) =>
             {
                 var index = _MOUSE_BUTTONS_OFFSET + (int)button;
@@ -87,8 +90,10 @@ public static class Input
                 {
                     _keys[index] = true;
                     _frames[index] = _current;
+                    _clicks[index] = true;
                 }
             };
+
 
             mouse.MouseUp += (m, button) =>
             {
@@ -102,6 +107,10 @@ public static class Input
 
             mouse.MouseMove += (m, position) =>
             {
+                MouseX = position.X;
+                MouseY = position.Y;
+
+
                 var xp = position.X;
                 var yp = position.Y;
 
@@ -119,7 +128,28 @@ public static class Input
                     _y = yp;
                 }
             };
-            mouse.Scroll += (m, wheel) => { ScrollDelta += wheel.Y; };
+            mouse.Scroll += (m, wheel) => 
+            { 
+                _scrollAccumulator += wheel.Y;
+                // Переводим в целые шаги (для тачпадов с дробным скроллом)
+                int wholeSteps = (int)_scrollAccumulator;
+                if (wholeSteps != 0)
+                {
+                    ScrollDelta += wholeSteps;
+                    _scrollAccumulator -= wholeSteps;
+                }
+            };
+
+        }
+    }
+
+    
+    public static void SetCursorMode(bool visible)
+    {
+        if (_inputContext != null && _inputContext.Mice.Count > 0)
+        {
+            _inputContext.Mice[0].Cursor.CursorMode = visible ? CursorMode.Normal : CursorMode.Disabled;
+            _cursorStarted = true; // Сбрасываем старую позицию, чтобы камера не дернулась
         }
     }
 
@@ -147,8 +177,15 @@ public static class Input
     public static bool Jclicked(MouseButton button)
     {
         var index = _MOUSE_BUTTONS_OFFSET + (int)button;
-        if (index >= _keys.Length) return false;
-        return _keys[index] && _frames[index] == _current;
+        if (index >= _clicks.Length) return false;
+        return _clicks[index];
+    }
+
+    public static int ConsumeScroll()
+    {
+        int val = ScrollDelta;
+        ScrollDelta = 0;
+        return val;
     }
 
     public static void PullEvents()
@@ -156,6 +193,9 @@ public static class Input
         _current++;
         DeltaX = 0F;
         DeltaY = 0F;
-        ScrollDelta = 0F;
+        ScrollDelta = 0; 
+        _scrollAccumulator = 0f;
+        Array.Clear(_clicks, 0, _clicks.Length);
     }
+
 }

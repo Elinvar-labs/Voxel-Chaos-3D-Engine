@@ -27,12 +27,17 @@ public sealed class Inventory
 
     public byte GetSlot(int i)       => _slots[i];
     public byte GetSelectedBlock()   => _slots[SelectedIndex];
-
+    
     public void Update()
     {
-        if (Input.ScrollDelta > 0.01f) SelectedIndex = (SelectedIndex - 1 + Slots) % Slots;
-        if (Input.ScrollDelta < -0.01f) SelectedIndex = (SelectedIndex + 1) % Slots;
-
+        int scroll = Input.ConsumeScroll();
+        
+        if (scroll != 0)
+        {
+            SelectedIndex = (SelectedIndex - scroll) % Slots;
+            if (SelectedIndex < 0) SelectedIndex += Slots;
+        }
+    
         for (int i = 0; i < Slots; i++)
             if (Input.Jpressed(Key.Number1 + i))
                 SelectedIndex = i;

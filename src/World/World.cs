@@ -1,6 +1,7 @@
 ﻿using System.Numerics;
 using Silk.NET.OpenGL;
 using VoxelChaos.Core;
+using VoxelChaos.Gameplay;
 using VoxelChaos.Graphics;
 using VoxelChaos.Rendering;
 using VoxelChaos.Scene;
@@ -23,19 +24,67 @@ public sealed class World
     public float BreakProgress { get; set; } = 0f;
     public Camera camera { get; set; }
 
-    public World(GL gl, float camX, float camY, float camZ,
-        uint realWidth, uint realHeight, uint renderWidth, uint renderHeight)
+    public readonly Dictionary<(int, int, int), byte> ModifiedBlocks = new();
+
+    public int Seed => _generator.Seed;
+    public float TimeOfDay => _renderer.TimeOfDay;
+
+    public World(GL gl, float camX, float camY, float camZ, uint realWidth, uint realHeight, uint renderWidth,
+        uint renderHeight, int seed = 1337)
     {
         camera = new Camera(new Vector3(camX, camY, camZ), 60, renderWidth, renderHeight);
 
         _renderer = new WorldRenderer(gl, DdaShaderPath, realWidth, realHeight, renderWidth, renderHeight);
-        _generator = new TerrainGenerator { Seed = WorldSeed };
-        _structures = new StructurePlacer(WorldSeed);
+        _generator = new TerrainGenerator { Seed = seed };
+        _structures = new StructurePlacer(seed);
 
         ConfigurePalette(_renderer.Palette);
         _renderer.ApplyWaterAlpha(110);
 
         UpdateStreaming();
+    }
+
+    public WorldSaveData GetSaveData(PlayerController player)
+    {
+        var data = new WorldSaveData
+        {
+            Seed = _generator.Seed,
+            TimeOfDay = _renderer.TimeOfDay,
+            PlayerPos = player.BodyPosition,
+            PlayerYaw = player.GetYaw(),
+            PlayerPitch = player.GetPitch()
+        };
+
+        foreach (var kv in ModifiedBlocks)
+            data.Modifications.Add(new BlockMod
+                { X = kv.Key.Item1, Y = kv.Key.Item2, Z = kv.Key.Item3, Block = kv.Value });
+
+        return data;
+    }
+
+    public void ApplySaveData(WorldSaveData data)
+    {
+        _renderer.SetTimeOfDay(data.TimeOfDay);
+        ModifiedBlocks.Clear();
+
+        foreach (var mod in data.Modifications)
+        {
+            // 1. Запоминаем изменение для будущих чанков
+            ModifiedBlocks[(mod.X, mod.Y, mod.Z)] = mod.Block;
+
+            // 2. Применяем изменение к уже загруженным чанкам в памяти
+            int cx = mod.X >> Chunk.SHIFT;
+            int cy = mod.Y >> Chunk.SHIFT;
+            int cz = mod.Z >> Chunk.SHIFT;
+
+            if (_storage.TryGet(new ChunkPos(cx, cy, cz), out var ch))
+            {
+                ch.Set(mod.X & Chunk.MASK, mod.Y & Chunk.MASK, mod.Z & Chunk.MASK, mod.Block);
+            }
+        }
+
+        // 3. Помечаем объём как "грязный", чтобы текстура пересобралась на следующем кадре
+        _volume.MarkDirty();
     }
 
     public void SetCamera(Camera cam) => camera = cam; // поле camera → property без readonly
@@ -61,6 +110,7 @@ public sealed class World
         if (!_storage.TryGet(new ChunkPos(cx, cy, cz), out var ch)) return;
 
         ch.Set(wx & Chunk.MASK, wy & Chunk.MASK, wz & Chunk.MASK, block);
+        ModifiedBlocks[(wx, wy, wz)] = block;
 
         int vx = wx - _volume.OriginChunkX * Chunk.SIZE;
         int vy = wy - _volume.OriginChunkY * Chunk.SIZE;
@@ -117,7 +167,7 @@ public sealed class World
         UpdateStreaming();
         _renderer.UpdateDayNight(deltaTime);
     }
-    
+
 
     // ============================================================
     private void UpdateStreaming()

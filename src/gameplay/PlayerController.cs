@@ -80,6 +80,22 @@ public sealed class PlayerController : Camera
         SetPosition(_bodyPos + new Vector3(0, EyeHeight, 0));
     }
 
+    public float GetYaw() => yaw;
+    public float GetPitch() => pitch;
+
+    public void SetRotation(float newYaw, float newPitch)
+    {
+        yaw = newYaw;
+        pitch = newPitch;
+        // Обновляем вектор взгляда
+        front.X = (float)(Math.Cos(pitch.ToRadians()) * Math.Cos(yaw.ToRadians()));
+        front.Y = (float)Math.Sin(pitch.ToRadians());
+        front.Z = (float)(Math.Cos(pitch.ToRadians()) * Math.Sin(yaw.ToRadians()));
+        front = Vector3.Normalize(front);
+        // Вызов UpdateVectors() (нужно сделать его protected или добавить метод)
+        UpdateVectors(); 
+    }
+    
     private void MoveFly(float dt)
     {
         var fwd = Mode == GameMode.Spectator
