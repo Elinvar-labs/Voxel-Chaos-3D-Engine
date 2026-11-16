@@ -26,8 +26,8 @@ uniform vec3  cameraUp;
 uniform vec3  cameraRight;
 uniform float fov;
 
-uniform usampler3D volumeTexture;
-uniform sampler2D   atlasTexture;
+layout(binding = 0) uniform usampler3D volumeTexture;
+layout(binding = 1) uniform sampler2D   atlasTexture;
 
 uniform float volOriginX, volOriginY, volOriginZ;
 uniform int   volSizeX,   volSizeY,   volSizeZ;
