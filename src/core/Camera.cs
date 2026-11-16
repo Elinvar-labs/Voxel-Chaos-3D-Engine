@@ -70,8 +70,10 @@ public class Camera
 
         if (Input.Pressed(Key.W)) movement += forwardPlane * cameraSpeed;
         if (Input.Pressed(Key.S)) movement -= forwardPlane * cameraSpeed;
-        if (Input.Pressed(Key.A)) movement += right * cameraSpeed;
-        if (Input.Pressed(Key.D)) movement -= right * cameraSpeed;
+
+        if (Input.Pressed(Key.A)) movement -= right * cameraSpeed;
+        if (Input.Pressed(Key.D)) movement += right * cameraSpeed;
+
         if (Input.Pressed(Key.ShiftLeft)) movement.Y -= cameraSpeed;
         if (Input.Pressed(Key.Space)) movement.Y += cameraSpeed;
 

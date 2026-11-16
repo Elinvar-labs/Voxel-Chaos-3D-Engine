@@ -17,7 +17,10 @@ public sealed class World
     private readonly ChunkStorage _storage = new();
     private readonly VolumeBuilder _volume = new();
     private readonly WorldRenderer _renderer;
-
+    public int BreakX { get; set; } = -1;
+    public int BreakY { get; set; } = -1;
+    public int BreakZ { get; set; } = -1;
+    public float BreakProgress { get; set; } = 0f;
     public Camera camera { get; set; }
 
     public World(GL gl, float camX, float camY, float camZ,
@@ -30,12 +33,12 @@ public sealed class World
         _structures = new StructurePlacer(WorldSeed);
 
         ConfigurePalette(_renderer.Palette);
-        _renderer.ApplyWaterAlpha(50);
-        
+        _renderer.ApplyWaterAlpha(110);
+
         UpdateStreaming();
     }
 
-    public void SetCamera(Camera cam) => camera = cam;   // поле camera → property без readonly
+    public void SetCamera(Camera cam) => camera = cam; // поле camera → property без readonly
 
     public byte GetBlock(int wx, int wy, int wz)
     {
@@ -79,22 +82,25 @@ public sealed class World
             _volume.OriginChunkX * Chunk.SIZE,
             _volume.OriginChunkY * Chunk.SIZE,
             _volume.OriginChunkZ * Chunk.SIZE,
-            camera, overlay);
+            camera,
+            BreakX, BreakY, BreakZ, BreakProgress,
+            overlay);
     }
+
     private static void ConfigurePalette(BlockPalette palette)
     {
-        palette.SetBlock(Blocks.Dirt,        55, 55, 55);
-        palette.SetBlock(Blocks.Grass,       83, 55, 83);
-        palette.SetBlock(Blocks.Stone,      128, 128, 128);
-        palette.SetBlock(Blocks.Wood,       132, 132, 131);
-        palette.SetBlock(Blocks.Leaves,      96, 96, 96);
-        palette.SetBlock(Blocks.Sand,       116, 116, 116);
-        palette.SetBlock(Blocks.Ice,         87, 87, 87);
-        palette.SetBlock(Blocks.Snow,       125, 125, 125);
-        palette.SetBlock(Blocks.Basalt,     102, 102, 102);
-        palette.SetBlock(Blocks.Lava,        94, 94, 94);
-        palette.SetBlock(Blocks.TempleStone,118, 118, 118);
-        palette.SetBlock(Blocks.Water,      133, 133, 133);
+        palette.SetBlock(Blocks.Dirt, 55, 55, 55);
+        palette.SetBlock(Blocks.Grass, 83, 55, 83);
+        palette.SetBlock(Blocks.Stone, 128, 128, 128);
+        palette.SetBlock(Blocks.Wood, 132, 132, 131);
+        palette.SetBlock(Blocks.Leaves, 96, 96, 96);
+        palette.SetBlock(Blocks.Sand, 116, 116, 116);
+        palette.SetBlock(Blocks.Ice, 87, 87, 87);
+        palette.SetBlock(Blocks.Snow, 125, 125, 125);
+        palette.SetBlock(Blocks.Basalt, 102, 102, 102);
+        palette.SetBlock(Blocks.Lava, 94, 94, 94);
+        palette.SetBlock(Blocks.TempleStone, 118, 118, 118);
+        palette.SetBlock(Blocks.Water, 133, 133, 133);
         palette.Upload();
     }
 
@@ -111,16 +117,7 @@ public sealed class World
         UpdateStreaming();
         _renderer.UpdateDayNight(deltaTime);
     }
-
-    public void Render()
-    {
-        _renderer.Render(
-            _volume.Data, VolumeBuilder.SizeX, VolumeBuilder.SizeY, VolumeBuilder.SizeZ,
-            _volume.OriginChunkX * Chunk.SIZE,
-            _volume.OriginChunkY * Chunk.SIZE,
-            _volume.OriginChunkZ * Chunk.SIZE,
-            camera);
-    }
+    
 
     // ============================================================
     private void UpdateStreaming()
@@ -132,12 +129,12 @@ public sealed class World
 
         int newOX = camCX - WorldConfig.VolChunksX / 2;
         int newOY = Math.Clamp(camCY - WorldConfig.VolChunksY / 2,
-                               0, WorldConfig.WorldHeightChunks - WorldConfig.VolChunksY);
+            0, WorldConfig.WorldHeightChunks - WorldConfig.VolChunksY);
         int newOZ = camCZ - WorldConfig.VolChunksZ / 2;
 
         bool originChanged = newOX != _volume.OriginChunkX
-                          || newOY != _volume.OriginChunkY
-                          || newOZ != _volume.OriginChunkZ;
+                             || newOY != _volume.OriginChunkY
+                             || newOZ != _volume.OriginChunkZ;
 
         if (!_volume.NeedsRebuild && !originChanged) return;
 
@@ -175,6 +172,7 @@ public sealed class World
                     pos.Z < newOZ || pos.Z >= newOZ + WorldConfig.VolChunksZ)
                     toDel.Add(pos);
             }
+
             foreach (var d in toDel) _storage.Remove(d);
 
             // ФИКС БАГА: даже если toGen пуст, при смене origin объём устарел.

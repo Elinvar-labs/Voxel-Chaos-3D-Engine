@@ -15,6 +15,11 @@ uniform int   screenWidth;
 uniform int   screenHeight;
 uniform float uTime; 
 
+uniform int   uBreakX;
+uniform int   uBreakY;
+uniform int   uBreakZ;
+uniform float uBreakProgress;
+
 uniform vec3  cameraPos;
 uniform vec3  cameraFront;
 uniform vec3  cameraUp;
@@ -85,9 +90,9 @@ vec3 skyColor(vec3 dir) {
 
 bool isSolid(ivec3 p) {
     if (p.x < 0 || p.x >= volSizeX || p.y < 0 || p.y >= volSizeY || p.z < 0 || p.z >= volSizeZ) return false;
-    return texelFetch(volumeTexture, p, 0).r != 0u;
+    uint id = texelFetch(volumeTexture, p, 0).r;
+    return id != 0u && id != WATER_ID; // 0 = воздух, WATER_ID = вода
 }
-
 float shadowRay(vec3 origin) {
     vec3 p = origin;
     ivec3 mapPos  = ivec3(floor(p));
@@ -110,7 +115,8 @@ float shadowRay(vec3 origin) {
         }
 
         if (mapPos.x < 0 || mapPos.x >= volSizeX || mapPos.y < 0 || mapPos.y >= volSizeY || mapPos.z < 0 || mapPos.z >= volSizeZ) return 1.0;
-        if (texelFetch(volumeTexture, mapPos, 0).r != 0u) return 0.0;
+        
+        if (isSolid(mapPos)) return 0.0; 
     }
     return 1.0;
 }
@@ -270,6 +276,21 @@ void main() {
 
                 vec3 litColor = texColor.rgb * faceShade * getLighting(faceNormal, ao, ndl, shadow);
                 
+                // ---------- ПРОЦЕДУРНЫЕ ТРЕЩИНЫ ----------
+                if (uBreakProgress > 0.0 && mapPos.x == uBreakX && mapPos.y == uBreakY && mapPos.z == uBreakZ) {
+                    // Разбиваем грань на сетку 8x8 (пиксельные трещины)
+                    vec2 crackUV = floor(faceUV * 8.0);
+                    // Псевдослучайный шум
+                    float noise = fract(sin(dot(crackUV, vec2(12.9898, 78.233))) * 43758.5453);
+                    
+                    // Чем больше прогресс, тем больше "пикселей" становятся трещинами
+                    if (noise < uBreakProgress * 1.5) {
+                        litColor = mix(litColor, vec3(0.05, 0.05, 0.05), 0.9); // Тёмная трещина
+                    } else {
+                        litColor *= (1.0 - uBreakProgress * 0.4); // Общее легкое затемнение блока
+                    }
+                }
+
                 if (isWater) {
                     vec3 viewDir = normalize(cameraPos - (rayPos + volOrigin + rayDir * travel));
                     vec3 halfDir = normalize(uSunDir + viewDir);

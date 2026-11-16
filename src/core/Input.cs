@@ -27,6 +27,18 @@ public static class Input
     {
         _inputContext = window.CreateInput();
 
+        window.FocusChanged += (focused) =>
+        {
+            if (!focused)
+            {
+                // Если окно теряет фокус — отпускаем все клавиши
+                Array.Clear(_keys, 0, _keys.Length);
+                _cursorStarted = true; // Сброс мыши, чтобы камера не дернулась при возврате
+            }
+        };
+
+
+        
         Console.WriteLine("INFO::INIT_INPUT");
 
         if (_inputContext.Keyboards.Count > 0)

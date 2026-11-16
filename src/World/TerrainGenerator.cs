@@ -22,16 +22,17 @@ public sealed class TerrainGenerator
     // ------------------------------------------------------------
     public Biome GetBiome(int wx, int wz)
     {
-        float temp  = FastNoise.Fbm2(wx * 0.0016f, wz * 0.0016f, Seed + 1000, 3);
+        float temp = FastNoise.Fbm2(wx * 0.0016f, wz * 0.0016f, Seed + 1000, 3);
         float humid = FastNoise.Fbm2(wx * 0.0018f, wz * 0.0018f, Seed + 2000, 3);
-        float rare  = FastNoise.Fbm2(wx * 0.0007f, wz * 0.0007f, Seed + 3000, 2);
+        float rare = FastNoise.Fbm2(wx * 0.0007f, wz * 0.0007f, Seed + 3000, 2);
 
         if (rare > 0.4f)
         {
             if (temp < -0.2f) return Biome.Ice;
             if (temp > 0.25f) return Biome.Volcano;
         }
-        if (temp > 0.2f)  return Biome.Desert;
+
+        if (temp > 0.2f) return Biome.Desert;
         if (humid > 0.05f) return Biome.Forest;
         return Biome.Plains;
     }
@@ -62,7 +63,7 @@ public sealed class TerrainGenerator
         hills = Math.Clamp(hills * 2.5f, -1f, 1f);
 
         float dFine = FastNoise.Perlin2(wx * 0.090f, wz * 0.090f, Seed + 500);
-        float dMed  = FastNoise.Fbm2(wx * 0.028f, wz * 0.028f, Seed + 501, 2);
+        float dMed = FastNoise.Fbm2(wx * 0.028f, wz * 0.028f, Seed + 501, 2);
 
         if (biome is Biome.Plains or Biome.Desert)
             erosionMask *= 0.4f;
@@ -115,18 +116,35 @@ public sealed class TerrainGenerator
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsCave(int wx, int wy, int wz, int surfaceY)
     {
-        if (wy < 5 || wy > 52) return false;
-        if (wy > surfaceY - 8) return false;
+        if (wy < 5 || wy > 120) return false;
 
+        // 1) РАСШИРЯЕМ ТУННЕЛИ (Spaghetti caves)
+        // Было 0.035f, стало 0.060f — туннели станут шире, и в них легче будет попасть.
         float n1 = FastNoise.Perlin3(wx * 0.018f, wy * 0.038f, wz * 0.018f, Seed + 5000);
-        if (n1 * n1 > 0.022f) return false;
+        if (n1 * n1 > 0.060f) return false;
 
         float n2 = FastNoise.Perlin3(wx * 0.018f, wy * 0.038f, wz * 0.018f, Seed + 6000);
-        if (n1 * n1 + n2 * n2 < 0.005f) return true;
+        // Было 0.008f, стало 0.025f — пещеры станут объемнее.
+        bool isSpaghetti = n1 * n1 + n2 * n2 < 0.025f;
 
+        if (isSpaghetti)
+        {
+            // 2) ОСЛАБЛЯЕМ МАСКУ ПОВЕРХНОСТИ
+            if (wy > surfaceY - 8)
+            {
+                // Было 0.1f, стало -0.25f. 
+                // Теперь пещера сможет пробить землю почти везде (кроме самых глубоких низин).
+                float surfaceMask = FastNoise.Fbm2(wx * 0.01f, wz * 0.01f, Seed + 8000, 2);
+                if (surfaceMask < -0.25f) return false;
+            }
+
+            return true;
+        }
+
+        // Cheese-каверны (крупные залы) — оставляем только глубоко под землей
         if (surfaceY - wy < 22) return false;
         float cheese = FastNoise.Perlin3(wx * 0.012f, wy * 0.024f, wz * 0.012f, Seed + 7000);
-        return cheese > 0.60f;
+        return cheese > 0.58f; // Чуть-чуть увеличили частоту появления залов
     }
 
     // ------------------------------------------------------------
@@ -139,7 +157,7 @@ public sealed class TerrainGenerator
 
         // 1) 2D heightmap + биомы
         Span<byte> bcol = stackalloc byte[Chunk.AREA];
-        Span<int>  hcol = stackalloc int[Chunk.AREA];
+        Span<int> hcol = stackalloc int[Chunk.AREA];
         for (int z = 0; z < Chunk.SIZE; z++)
         for (int x = 0; x < Chunk.SIZE; x++)
         {
@@ -154,7 +172,9 @@ public sealed class TerrainGenerator
         Span<int> counts = stackalloc int[5];
         foreach (var b in bcol) counts[b]++;
         int maxI = 0;
-        for (int k = 1; k < 5; k++) if (counts[k] > counts[maxI]) maxI = k;
+        for (int k = 1; k < 5; k++)
+            if (counts[k] > counts[maxI])
+                maxI = k;
         chunk.biome = (Biome)maxI;
 
         // 3) Заполнение вокселей
@@ -180,12 +200,14 @@ public sealed class TerrainGenerator
 
                 if (dh >= 0)
                 {
-                    if (mayHaveCaves && dh > 3 && !belowCaveZone
-                        && wy < h - 8
-                        && IsCave(wX0 + x, wy, wZ0 + z, h))
+                    if (mayHaveCaves && !belowCaveZone && IsCave(wX0 + x, wy, wZ0 + z, h))
+                    {
                         b = Blocks.Air;
+                    }
                     else
+                    {
                         b = SolidBlockFor((Biome)bcol[i], wy, dh);
+                    }
                 }
                 else
                 {
@@ -207,22 +229,24 @@ public sealed class TerrainGenerator
             return depth < 3 ? Blocks.Sand : Blocks.Stone;
         }
 
-        if (depth < 1) return b switch
-        {
-            Biome.Plains or Biome.Forest => Blocks.Grass,
-            Biome.Desert  => Blocks.Sand,
-            Biome.Ice     => Blocks.Snow,
-            Biome.Volcano => Blocks.Basalt,
-            _ => Blocks.Stone
-        };
+        if (depth < 1)
+            return b switch
+            {
+                Biome.Plains or Biome.Forest => Blocks.Grass,
+                Biome.Desert => Blocks.Sand,
+                Biome.Ice => Blocks.Snow,
+                Biome.Volcano => Blocks.Basalt,
+                _ => Blocks.Stone
+            };
 
-        if (depth < 4) return b switch
-        {
-            Biome.Desert  => Blocks.Sand,
-            Biome.Ice     => Blocks.Ice,
-            Biome.Volcano => Blocks.Basalt,
-            _ => Blocks.Dirt
-        };
+        if (depth < 4)
+            return b switch
+            {
+                Biome.Desert => Blocks.Sand,
+                Biome.Ice => Blocks.Ice,
+                Biome.Volcano => Blocks.Basalt,
+                _ => Blocks.Dirt
+            };
 
         return Blocks.Stone;
     }
