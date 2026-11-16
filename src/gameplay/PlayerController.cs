@@ -3,6 +3,8 @@ using Silk.NET.Input;
 using VoxelChaos.Core;
 using VoxelChaos.World;
 using Timer = VoxelChaos.Utils.Timer;
+using VoxelChaos.Core;
+using VoxelChaos.Scene;
 
 namespace VoxelChaos.Gameplay;
 
@@ -23,6 +25,7 @@ public sealed class PlayerController : Camera
     private Vector3 _bodyPos; // позиция НОГ
     private Vector3 _velocity;
     private bool _onGround;
+    private float _distanceWalked = 0f;
 
     public GameMode Mode { get; set; } = GameMode.Creative;
     public World.World? World => _world;
@@ -57,18 +60,21 @@ public sealed class PlayerController : Camera
         {
             Mode = GameMode.Spectator;
             _velocity = Vector3.Zero;
+            AudioManager.PlaySound("change_gamemode.ogg", 0.5f);
         }
 
         if (Input.Jpressed(Key.F2))
         {
             Mode = GameMode.Creative;
             _velocity = Vector3.Zero;
+            AudioManager.PlaySound("change_gamemode.ogg", 0.5f);
         }
 
         if (Input.Jpressed(Key.F3))
         {
             Mode = GameMode.Survival;
             _velocity = Vector3.Zero;
+            AudioManager.PlaySound("change_gamemode.ogg", 0.5f);
         }
 
         if (_world == null) return;
@@ -93,9 +99,9 @@ public sealed class PlayerController : Camera
         front.Z = (float)(Math.Cos(pitch.ToRadians()) * Math.Sin(yaw.ToRadians()));
         front = Vector3.Normalize(front);
         // Вызов UpdateVectors() (нужно сделать его protected или добавить метод)
-        UpdateVectors(); 
+        UpdateVectors();
     }
-    
+
     private void MoveFly(float dt)
     {
         var fwd = Mode == GameMode.Spectator
@@ -140,6 +146,36 @@ public sealed class PlayerController : Camera
             _velocity.Y = JumpSpeed;
 
         MoveAxis(_velocity * dt);
+        float horizontalSpeed = new Vector2(_velocity.X, _velocity.Z).Length();
+        if (_onGround && horizontalSpeed > 0.1f)
+        {
+            _distanceWalked += horizontalSpeed * dt;
+            if (_distanceWalked > 2.0f) // Звук шага каждые 2 блока
+            {
+                _distanceWalked = 0f;
+                PlayFootstep();
+            }
+        }
+        else if (!_onGround) _distanceWalked = 0f;
+    }
+
+    private void PlayFootstep()
+    {
+        if (_world == null) return;
+        int bx = (int)MathF.Floor(_bodyPos.X);
+        int by = (int)MathF.Floor(_bodyPos.Y - 0.1f);
+        int bz = (int)MathF.Floor(_bodyPos.Z);
+
+        byte block = _world.GetBlock(bx, by, bz);
+        string sound = block switch
+        {
+            Blocks.Grass or Blocks.Dirt or Blocks.Leaves => "steps_grass.ogg",
+            Blocks.Stone or Blocks.Sand or Blocks.Basalt or Blocks.TempleStone => "steps_stone.ogg",
+            Blocks.Wood => "steps_wood.ogg",
+            _ => null
+        };
+
+        if (sound != null) AudioManager.PlaySound(sound, 0.25f);
     }
 
     private void MoveAxis(Vector3 delta)

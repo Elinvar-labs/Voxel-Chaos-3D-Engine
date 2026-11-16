@@ -30,7 +30,11 @@ public sealed class BlockInteraction
         float dt = (float)_timer.GetDelta();
         if (dt <= 0f || dt > 0.1f) dt = 1f / 60f;
 
-        if (_player.Mode == GameMode.Spectator) { ResetBreak(); return; }
+        if (_player.Mode == GameMode.Spectator)
+        {
+            ResetBreak();
+            return;
+        }
 
         UpdateBreak(dt);
         UpdatePlace();
@@ -44,15 +48,21 @@ public sealed class BlockInteraction
             ResetBreak();
             if (Input.Jclicked(MouseButton.Left))
             {
-                if (VoxelRaycaster.Raycast(_world, _camera.GetPosition(), _camera.GetFront(), Reach, out var hit, out _))
+                if (VoxelRaycaster.Raycast(_world, _camera.GetPosition(), _camera.GetFront(), Reach, out var hit,
+                        out _))
                     _world.SetBlock(hit.X, hit.Y, hit.Z, Blocks.Air);
             }
+
             return;
         }
 
         // В выживании ломаем постепенно
         bool held = Input.Clicked(MouseButton.Left);
-        if (!held) { ResetBreak(); return; }
+        if (!held)
+        {
+            ResetBreak();
+            return;
+        }
 
         if (!VoxelRaycaster.Raycast(_world, _camera.GetPosition(), _camera.GetFront(), Reach, out var target, out _))
         {
@@ -80,10 +90,21 @@ public sealed class BlockInteraction
         float hardness = GetHardness(block);
         _world.BreakProgress += dt / hardness;
 
-        // Блок сломан
         if (_world.BreakProgress >= 1.0f)
         {
+            byte brokenBlock = _world.GetBlock(target.X, target.Y, target.Z);
             _world.SetBlock(target.X, target.Y, target.Z, Blocks.Air);
+
+            // Воспроизводим звук
+            string sound = brokenBlock switch
+            {
+                Blocks.Grass or Blocks.Dirt or Blocks.Leaves => "breaking_grass.ogg",
+                Blocks.Stone or Blocks.Sand or Blocks.Basalt or Blocks.TempleStone => "breaking_stone.ogg",
+                Blocks.Wood => "breaking_wood.ogg",
+                _ => null
+            };
+            if (sound != null) AudioManager.PlaySound(sound, 0.6f);
+
             ResetBreak();
         }
     }
@@ -93,7 +114,8 @@ public sealed class BlockInteraction
         if (_player.Mode == GameMode.Spectator) return;
         if (!Input.Jclicked(MouseButton.Right)) return;
 
-        if (!VoxelRaycaster.Raycast(_world, _camera.GetPosition(), _camera.GetFront(), Reach, out var hit, out var normal))
+        if (!VoxelRaycaster.Raycast(_world, _camera.GetPosition(), _camera.GetFront(), Reach, out var hit,
+                out var normal))
             return;
 
         int px = hit.X + normal.X;
@@ -118,17 +140,17 @@ public sealed class BlockInteraction
     {
         return block switch
         {
-            Blocks.Leaves      => 0.2f,  // Ломаются за 0.2 сек
-            Blocks.Snow        => 0.3f,
-            Blocks.Dirt        => 0.5f,
-            Blocks.Sand        => 0.5f,
-            Blocks.Ice         => 0.5f,
-            Blocks.Grass       => 0.6f,
-            Blocks.Wood        => 1.2f,
-            Blocks.Stone       => 1.5f,
+            Blocks.Leaves => 0.2f, // Ломаются за 0.2 сек
+            Blocks.Snow => 0.3f,
+            Blocks.Dirt => 0.5f,
+            Blocks.Sand => 0.5f,
+            Blocks.Ice => 0.5f,
+            Blocks.Grass => 0.6f,
+            Blocks.Wood => 1.2f,
+            Blocks.Stone => 1.5f,
             Blocks.TempleStone => 1.5f,
-            Blocks.Basalt      => 1.8f,
-            _                  => 1.0f
+            Blocks.Basalt => 1.8f,
+            _ => 1.0f
         };
     }
 }

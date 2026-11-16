@@ -71,6 +71,7 @@ public sealed class Program : IDisposable
     private void OnLoad()
     {
         Input.Initialize(_window!);
+        AudioManager.Initialize();
         _gl = _window!.CreateOpenGL();
 
         _gl.Enable(EnableCap.Blend);
@@ -320,5 +321,9 @@ public sealed class Program : IDisposable
         _window!.Title = $"{WindowTitle} | FPS: {_currentFps:F0} | {mode}";
     }
 
-    public void Dispose() => _window?.Dispose();
+    public void Dispose() 
+    {
+        AudioManager.Dispose(); 
+        _window?.Dispose();
+    }
 }
